@@ -7,18 +7,24 @@ class MqttService {
   String broker = 'broker.emqx.io';
   int port = 1883;
   String topic = 'nugra/data/kolam';
+  String clientId = '225510017';
 
   Function(Map<String, dynamic>)? onDataReceived;
 
-  void setConfiguration(
-      {required String broker, required int port, required String topic}) {
+  void setConfiguration({
+    required String broker,
+    required int port,
+    required String topic,
+    required String clientId,
+  }) {
     this.broker = broker;
     this.port = port;
     this.topic = topic;
+    this.clientId = clientId;
   }
 
   Future<void> connect() async {
-    client = MqttServerClient.withPort(broker, 'flutter_kolam_ikan', port);
+    client = MqttServerClient.withPort(broker, clientId, port);
     client.logging(on: false);
     client.keepAlivePeriod = 20;
     client.onConnected = onConnected;
@@ -26,7 +32,7 @@ class MqttService {
     client.onSubscribed = onSubscribed;
 
     final connMessage = MqttConnectMessage()
-        .withClientIdentifier('flutter_kolam_ikan')
+        .withClientIdentifier(clientId)
         .withWillTopic('willtopic')
         .withWillMessage('Connection Closed')
         .startClean()
@@ -83,4 +89,3 @@ class MqttService {
     print('Subscribed to $topic');
   }
 }
-//  ---- Fix
