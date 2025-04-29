@@ -8,6 +8,7 @@ import 'connection_page.dart';
 import 'package:animations/animations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'control_page.dart';
 
 class DashboardPage extends StatefulWidget {
   @override
@@ -237,9 +238,10 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   List<Widget> get _pages => [
-        _buildDashboardView(),
-        _buildConnectionPage(),
-        AboutPage(mqttService: mqttService),
+        _buildDashboardView(), // index 0
+        _buildConnectionPage(), // index 1
+        AboutPage(mqttService: mqttService), // index 2
+        ControlPage(), // <<< Tambahin ini
       ];
 
   Widget _buildDashboardView() {
@@ -398,7 +400,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildDetailTable(int index) {
     final data = sensorData[index];
     return Card(
-      elevation: 3,
+      elevation: 1,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Table(
@@ -503,6 +505,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 FaIcon(FontAwesomeIcons.circleInfo), // Ganti jadi ikon "about"
             label: 'About',
           ),
+          BottomNavigationBarItem(
+            icon: FaIcon(FontAwesomeIcons.sliders), // ICON barunya: "sliders"
+            label: 'Kontrol', // Label baru
+          ),
         ],
       ),
     );
@@ -531,4 +537,4 @@ class SensorCardData {
     );
   }
 }
-//  Done 19/04/2025
+//  Done 19/04/2025 " ada penambahaan oada control"
