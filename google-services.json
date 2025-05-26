@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "526504562294",
+    "project_id": "dataiot-7419a",
+    "storage_bucket": "dataiot-7419a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:526504562294:android:3d29e16b1dd3db3ba5d957",
+        "android_client_info": {
+          "package_name": "com.nugra"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_g0BrY_8jufY7Zxc1wiTWIVL0JyqOGaU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
