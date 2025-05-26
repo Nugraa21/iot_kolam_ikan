@@ -213,10 +213,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 }).toList(),
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Batal'),
-                ),
+                // TextButton(
+                //   onPressed: () => Navigator.pop(context),
+                //   child: Text('Batal'),
+                // ),                               // ---------------------------------------------- Code ati jadi harus ada yang di perbaiki
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
