@@ -9,52 +9,50 @@ class AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildTitleSection(),
-          _buildProfileExpansionCard(
-            icon: Icons.person,
-            name: 'Ludang Prasetyo',
-            role: 'Developer',
-            nim: '225510017',
-            tugas: 'Mengembangkan aplikasi IoT',
-            profilePicture: AssetImage('assets/ludang.jpg'),
-            email: 'ludang.prasetyo@students.utdi.ac.id',
-            github: 'https://github.com/Nugraa21',
-            skill: 'Programming dan editing video',
-          ),
-          _buildProfileExpansionCard(
-            icon: Icons.person,
-            name: 'Ibnu Hibban ',
-            role: 'UI Designer',
-            nim: '225510007',
-            tugas: 'Menangani IoT dan sensor',
-            profilePicture: AssetImage('assets/ibnu.jpg'),
-            email: 'Ibnu.Hibban.Dzulfikri@students.utdi.ac.id',
-            github: '-----',
-            skill: 'IoT, Sensor Integration, Embedded Systems',
-          ),
-          _buildProfileExpansionCard(
-            icon: Icons.person,
-            name: 'Muhammad Fadrian',
-            role: 'Tester & Dokumentasi',
-            nim: '225510005',
-            tugas: 'Melakukan testing dan dokumentasi',
-            profilePicture: AssetImage('assets/fadrian.jpg'),
-            email: 'Muhamaad.fadrian@students.utdi.ac.id',
-            github: 'https://github.com/fadrian',
-            skill: 'Testing, Documentation, Quality Assurance',
-          ),
-          const SizedBox(height: 20),
-          _buildExtraInfo(),
-          const SizedBox(height: 20),
-          _buildSensorTable(),
-          const SizedBox(height: 30),
-          _buildFooter(),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildTitleSection(),
+        _buildProfileExpansionCard(
+          icon: Icons.person,
+          name: 'Ludang Prasetyo',
+          role: 'Developer',
+          nim: '225510017',
+          tugas: 'Mengembangkan aplikasi IoT',
+          profilePicture: AssetImage('assets/ludang.jpg'),
+          email: 'ludang.prasetyo@students.utdi.ac.id',
+          github: 'https://github.com/Nugraa21',
+          skill: 'Programming dan editing video',
+        ),
+        _buildProfileExpansionCard(
+          icon: Icons.person,
+          name: 'Ibnu Hibban ',
+          role: 'UI Designer',
+          nim: '225510007',
+          tugas: 'Menangani IoT dan sensor',
+          profilePicture: AssetImage('assets/ibnu.jpg'),
+          email: 'Ibnu.Hibban.Dzulfikri@students.utdi.ac.id',
+          github: '-----',
+          skill: 'IoT, Sensor Integration, Embedded Systems',
+        ),
+        _buildProfileExpansionCard(
+          icon: Icons.person,
+          name: 'Muhammad Fadrian',
+          role: 'Tester & Dokumentasi',
+          nim: '225510005',
+          tugas: 'Melakukan testing dan dokumentasi',
+          profilePicture: AssetImage('assets/fadrian.jpg'),
+          email: 'Muhamaad.fadrian@students.utdi.ac.id',
+          github: 'https://github.com/fadrian',
+          skill: 'Testing, Documentation, Quality Assurance',
+        ),
+        const SizedBox(height: 20),
+        _buildExtraInfo(),
+        const SizedBox(height: 20),
+        _buildSensorTable(),
+        const SizedBox(height: 30),
+        _buildFooter(),
+      ],
     );
   }
 
@@ -243,4 +241,3 @@ class AboutPage extends StatelessWidget {
     );
   }
 }
-//  Done//  Done 19/04/2025

@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:line_icons/line_icons.dart';
-import '../widgets/sensor_card.dart';
-import '../services/mqtt_service.dart';
-import 'about_page.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'connection_page.dart';
-import 'package:animations/animations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'control_page.dart';
+import '../widgets/sensor_card.dart';
+import '../services/mqtt_service.dart';
 
 class DashboardPage extends StatefulWidget {
+  final MqttService mqttService;
+
+  DashboardPage({required this.mqttService});
+
   @override
   _DashboardPageState createState() => _DashboardPageState();
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  late MqttService mqttService;
-  int _selectedIndex = 0;
   int selectedPond = 0;
-
   final warningColor = const Color.fromARGB(255, 150, 0, 0);
-
   List<List<SensorCardData>> sensorData = [];
   List<List<String>> activeSensorKeysPerPond = [];
   List<String> pondStatus = [];
@@ -62,12 +57,19 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    mqttService = MqttService();
-    mqttService.onDataReceived = updateSensorData;
-    mqttService.connect();
+    widget.mqttService.onDataReceived = updateSensorData;
+    widget.mqttService.connect();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPonds();
+      _loadLastSensorData();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Perbarui data saat halaman ditampilkan kembali
+    _loadLastSensorData();
   }
 
   void _loadPonds() async {
@@ -93,6 +95,24 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
+  void _loadLastSensorData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 0; i < sensorData.length; i++) {
+      String key = 'last_sensor_data_pond_${i + 1}';
+      String? lastData = prefs.getString(key);
+      if (lastData != null) {
+        Map<String, dynamic> data = jsonDecode(lastData);
+        updateSensorData(data, fromStorage: true);
+      }
+    }
+  }
+
+  void _saveLastSensorData(int pondIndex, Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    String key = 'last_sensor_data_pond_${pondIndex + 1}';
+    await prefs.setString(key, jsonEncode(data));
+  }
+
   void _savePondData() async {
     final prefs = await SharedPreferences.getInstance();
     prefs.setInt('pondCount', sensorData.length);
@@ -108,7 +128,7 @@ class _DashboardPageState extends State<DashboardPage> {
         .toList();
   }
 
-  void updateSensorData(Map<String, dynamic> data) {
+  void updateSensorData(Map<String, dynamic> data, {bool fromStorage = false}) {
     setState(() {
       int pondIndex = (data['kolam'] ?? 1) - 1;
       if (pondIndex >= 0 && pondIndex < sensorData.length) {
@@ -158,8 +178,32 @@ class _DashboardPageState extends State<DashboardPage> {
         bool isSafe =
             sensorData[pondIndex].every((s) => s.color != warningColor);
         pondStatus[pondIndex] = isSafe ? 'Aman' : 'Ada Masalah';
+
+        // Simpan data terakhir ke SharedPreferences
+        if (!fromStorage) {
+          _saveLastSensorData(pondIndex, data);
+          _saveToHistory(data);
+        }
       }
     });
+  }
+
+  void _saveToHistory(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    int pondIndex = (data['kolam'] ?? 1) - 1;
+    String timestamp = DateTime.now().toIso8601String();
+    Map<String, dynamic> historyEntry = {
+      'timestamp': timestamp,
+      'data': data,
+    };
+
+    String key = 'history_pond_${pondIndex + 1}';
+    List<String> history = prefs.getStringList(key) ?? [];
+    history.add(jsonEncode(historyEntry));
+    if (history.length > 100) {
+      history = history.sublist(history.length - 100);
+    }
+    await prefs.setStringList(key, history);
   }
 
   void _addPond() {
@@ -213,10 +257,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 }).toList(),
               ),
               actions: [
-                // TextButton(
-                //   onPressed: () => Navigator.pop(context),
-                //   child: Text('Batal'),
-                // ),                               // ---------------------------------------------- Code ati jadi harus ada yang di perbaiki
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Batal'),
+                ),
                 ElevatedButton(
                   onPressed: () {
                     setState(() {
@@ -236,13 +280,6 @@ class _DashboardPageState extends State<DashboardPage> {
       },
     );
   }
-
-  List<Widget> get _pages => [
-        _buildDashboardView(), // index 0
-        _buildConnectionPage(), // index 1
-        AboutPage(mqttService: mqttService), // index 2
-        ControlPage(), // <<< Tambahin ini
-      ];
 
   Widget _buildDashboardView() {
     TextEditingController searchController = TextEditingController();
@@ -446,72 +483,19 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildConnectionPage() {
-    return ConnectionPage(
-      mqttService: mqttService,
-      onConnected: () => setState(() {}),
-    );
-  }
-
   @override
   void dispose() {
-    mqttService.disconnect();
+    // Jangan putuskan koneksi MQTT di sini, karena dibagi di BottomNavigation
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (sensorData.isEmpty || selectedPond >= sensorData.length) {
-      return Scaffold(
-        appBar: AppBar(title: Text("Loading...")),
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return Center(child: CircularProgressIndicator());
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Monitoring Kolam Ikan',
-            style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color.fromARGB(221, 0, 0, 0),
-      ),
-      body: PageTransitionSwitcher(
-        duration: Duration(milliseconds: 500),
-        transitionBuilder: (child, animation, secondaryAnimation) =>
-            SharedAxisTransition(
-          animation: animation,
-          secondaryAnimation: secondaryAnimation,
-          transitionType: SharedAxisTransitionType.horizontal,
-          child: child,
-        ),
-        child: _pages[_selectedIndex],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.teal,
-        unselectedItemColor: Colors.black,
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: [
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon:
-                FaIcon(FontAwesomeIcons.wifi), // Ganti jadi ikon jaringan/wifi
-            label: 'Connection',
-          ),
-          BottomNavigationBarItem(
-            icon:
-                FaIcon(FontAwesomeIcons.circleInfo), // Ganti jadi ikon "about"
-            label: 'About',
-          ),
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.sliders), // ICON barunya: "sliders"
-            label: 'Kontrol', // Label baru
-          ),
-        ],
-      ),
-    );
+    return _buildDashboardView();
   }
 }
 
@@ -537,4 +521,3 @@ class SensorCardData {
     );
   }
 }
-//  Done 19/04/2025 " ada penambahaan oada control"
