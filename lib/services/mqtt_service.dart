@@ -1,6 +1,7 @@
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MqttService {
   late MqttServerClient client;
@@ -8,8 +9,10 @@ class MqttService {
   int port = 1883;
   String topic = 'nugra/data/kolam';
   String clientId = '225510017';
-
   Function(Map<String, dynamic>)? onDataReceived;
+
+  // Inisialisasi Firestore
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   void setConfiguration({
     required String broker,
@@ -61,6 +64,7 @@ class MqttService {
           final decoded = jsonDecode(payload);
           if (decoded is Map<String, dynamic>) {
             onDataReceived?.call(decoded);
+            _saveToFirestore(decoded); // Simpan ke Firestore
           } else {
             print('Decoded data is not a JSON object');
           }
@@ -70,6 +74,30 @@ class MqttService {
       });
     } else {
       print('MQTT Connection Failed - Status: ${client.connectionStatus}');
+    }
+  }
+
+  // Fungsi untuk menyimpan data ke Firestore
+  void _saveToFirestore(Map<String, dynamic> data) async {
+    int pondIndex = (data['kolam'] ?? 1) - 1;
+    String timestamp = DateTime.now().toIso8601String();
+
+    try {
+      await _firestore
+          .collection('ponds')
+          .doc('pond_${pondIndex + 1}')
+          .collection('sensor_data')
+          .add({
+        'timestamp': timestamp,
+        'suhu': data['suhu']?.toString() ?? '0.0',
+        'do': data['do']?.toString() ?? '0.0',
+        'ph': data['ph']?.toString() ?? '0.0',
+        'berat_pakan': data['berat_pakan']?.toString() ?? '0.0',
+        'level_air': data['level_air']?.toString() ?? '0',
+      });
+      print('Data saved to Firestore: $data');
+    } catch (e) {
+      print('Error saving to Firestore: $e');
     }
   }
 
@@ -89,4 +117,3 @@ class MqttService {
     print('Subscribed to $topic');
   }
 }
-//  Done 19/04/2025

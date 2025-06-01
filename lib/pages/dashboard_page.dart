@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/sensor_card.dart';
 import '../services/mqtt_service.dart';
 
 class DashboardPage extends StatefulWidget {
   final MqttService mqttService;
 
-  DashboardPage({required this.mqttService});
+  const DashboardPage({required this.mqttService, super.key});
 
   @override
   _DashboardPageState createState() => _DashboardPageState();
@@ -23,31 +24,31 @@ class _DashboardPageState extends State<DashboardPage> {
 
   final Map<String, SensorCardData> allSensors = {
     'suhu': SensorCardData(
-      icon: FaIcon(FontAwesomeIcons.temperatureHigh),
+      icon: const FaIcon(FontAwesomeIcons.temperatureHigh),
       label: 'Suhu',
       value: '0.0 °C',
       color: Colors.teal,
     ),
     'do': SensorCardData(
-      icon: FaIcon(FontAwesomeIcons.water),
+      icon: const FaIcon(FontAwesomeIcons.water),
       label: 'Kadar DO',
       value: '0.0 mg/L',
       color: Colors.teal,
     ),
     'ph': SensorCardData(
-      icon: FaIcon(FontAwesomeIcons.flaskVial),
+      icon: const FaIcon(FontAwesomeIcons.flaskVial),
       label: 'pH Air',
       value: '0.0',
       color: Colors.teal,
     ),
     'berat_pakan': SensorCardData(
-      icon: FaIcon(FontAwesomeIcons.weightHanging),
+      icon: const FaIcon(FontAwesomeIcons.weightHanging),
       label: 'Berat Pakan',
       value: '0.0 Kg',
       color: Colors.teal,
     ),
     'level_air': SensorCardData(
-      icon: FaIcon(FontAwesomeIcons.arrowsDownToLine),
+      icon: const FaIcon(FontAwesomeIcons.arrowsDownToLine),
       label: 'Ketinggian Air',
       value: '0%',
       color: Colors.teal,
@@ -61,15 +62,35 @@ class _DashboardPageState extends State<DashboardPage> {
     widget.mqttService.connect();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPonds();
-      _loadLastSensorData();
+      _listenToFirestore();
     });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Perbarui data saat halaman ditampilkan kembali
-    _loadLastSensorData();
+  void _listenToFirestore() {
+    for (int i = 0; i < sensorData.length; i++) {
+      FirebaseFirestore.instance
+          .collection('ponds')
+          .doc('pond_${i + 1}')
+          .collection('sensor_data')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen((snapshot) {
+        if (snapshot.docs.isNotEmpty) {
+          final data = snapshot.docs.first.data();
+          updateSensorData({
+            'kolam': i + 1,
+            'suhu': data['suhu'],
+            'do': data['do'],
+            'ph': data['ph'],
+            'berat_pakan': data['berat_pakan'],
+            'level_air': data['level_air'],
+          }, fromFirestore: true);
+        }
+      }, onError: (e) {
+        print('Error listening to Firestore: $e');
+      });
+    }
   }
 
   void _loadPonds() async {
@@ -95,24 +116,6 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
-  void _loadLastSensorData() async {
-    final prefs = await SharedPreferences.getInstance();
-    for (int i = 0; i < sensorData.length; i++) {
-      String key = 'last_sensor_data_pond_${i + 1}';
-      String? lastData = prefs.getString(key);
-      if (lastData != null) {
-        Map<String, dynamic> data = jsonDecode(lastData);
-        updateSensorData(data, fromStorage: true);
-      }
-    }
-  }
-
-  void _saveLastSensorData(int pondIndex, Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    String key = 'last_sensor_data_pond_${pondIndex + 1}';
-    await prefs.setString(key, jsonEncode(data));
-  }
-
   void _savePondData() async {
     final prefs = await SharedPreferences.getInstance();
     prefs.setInt('pondCount', sensorData.length);
@@ -128,7 +131,8 @@ class _DashboardPageState extends State<DashboardPage> {
         .toList();
   }
 
-  void updateSensorData(Map<String, dynamic> data, {bool fromStorage = false}) {
+  void updateSensorData(Map<String, dynamic> data,
+      {bool fromFirestore = false}) {
     setState(() {
       int pondIndex = (data['kolam'] ?? 1) - 1;
       if (pondIndex >= 0 && pondIndex < sensorData.length) {
@@ -178,32 +182,8 @@ class _DashboardPageState extends State<DashboardPage> {
         bool isSafe =
             sensorData[pondIndex].every((s) => s.color != warningColor);
         pondStatus[pondIndex] = isSafe ? 'Aman' : 'Ada Masalah';
-
-        // Simpan data terakhir ke SharedPreferences
-        if (!fromStorage) {
-          _saveLastSensorData(pondIndex, data);
-          _saveToHistory(data);
-        }
       }
     });
-  }
-
-  void _saveToHistory(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    int pondIndex = (data['kolam'] ?? 1) - 1;
-    String timestamp = DateTime.now().toIso8601String();
-    Map<String, dynamic> historyEntry = {
-      'timestamp': timestamp,
-      'data': data,
-    };
-
-    String key = 'history_pond_${pondIndex + 1}';
-    List<String> history = prefs.getStringList(key) ?? [];
-    history.add(jsonEncode(historyEntry));
-    if (history.length > 100) {
-      history = history.sublist(history.length - 100);
-    }
-    await prefs.setStringList(key, history);
   }
 
   void _addPond() {
@@ -214,6 +194,7 @@ class _DashboardPageState extends State<DashboardPage> {
       selectedPond = sensorData.length - 1;
     });
     _savePondData();
+    _listenToFirestore(); // Perbarui listener untuk kolam baru
   }
 
   void _deletePond(int index) {
@@ -237,7 +218,7 @@ class _DashboardPageState extends State<DashboardPage> {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              title: Text('Pilih Sensor yang Ditampilkan'),
+              title: const Text('Pilih Sensor yang Ditampilkan'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: allSensors.keys.map((key) {
@@ -259,7 +240,7 @@ class _DashboardPageState extends State<DashboardPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text('Batal'),
+                  child: const Text('Batal'),
                 ),
                 ElevatedButton(
                   onPressed: () {
@@ -271,7 +252,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     _savePondData();
                     Navigator.pop(context);
                   },
-                  child: Text('Simpan'),
+                  child: const Text('Simpan'),
                 ),
               ],
             );
@@ -299,7 +280,7 @@ class _DashboardPageState extends State<DashboardPage> {
         }
 
         return sensorData.isEmpty
-            ? Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
                   Padding(
@@ -311,7 +292,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             controller: searchController,
                             decoration: InputDecoration(
                               hintText: 'Cari Kolam...',
-                              prefixIcon: Icon(Icons.search),
+                              prefixIcon: const Icon(Icons.search),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -319,17 +300,17 @@ class _DashboardPageState extends State<DashboardPage> {
                             onChanged: applySearch,
                           ),
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         IconButton(
-                          icon: Icon(Icons.settings),
+                          icon: const Icon(Icons.settings),
                           onPressed: _showSensorSettings,
                         ),
                         IconButton(
-                          icon: Icon(Icons.add),
+                          icon: const Icon(Icons.add),
                           onPressed: _addPond,
                         ),
                         IconButton(
-                          icon: Icon(Icons.delete),
+                          icon: const Icon(Icons.delete),
                           onPressed: () => _deletePond(selectedPond),
                         ),
                       ],
@@ -337,10 +318,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   Expanded(
                     child: AnimatedSwitcher(
-                      duration: Duration(milliseconds: 500),
+                      duration: const Duration(milliseconds: 500),
                       transitionBuilder: (child, animation) => SlideTransition(
                         position: Tween<Offset>(
-                          begin: Offset(1, 0),
+                          begin: const Offset(1, 0),
                           end: Offset.zero,
                         ).animate(animation),
                         child: FadeTransition(opacity: animation, child: child),
@@ -352,7 +333,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           ...sensorData[selectedPond]
                               .map((data) => SensorCard(data: data))
                               .toList(),
-                          SizedBox(height: 20),
+                          const SizedBox(height: 20),
                           _buildDetailTable(selectedPond),
                         ],
                       ),
@@ -374,7 +355,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               ? Colors.teal
                               : Colors.red,
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Text(
                           'Status: ${pondStatus[selectedPond]}',
                           style: TextStyle(
@@ -403,8 +384,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                   onTap: () =>
                                       setState(() => selectedPond = index),
                                   child: Container(
-                                    margin: EdgeInsets.symmetric(horizontal: 4),
-                                    padding: EdgeInsets.symmetric(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 4),
+                                    padding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: selectedPond == index
@@ -414,7 +396,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     ),
                                     child: Text(
                                       'Kolam ${index + 1}',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -485,14 +467,13 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   void dispose() {
-    // Jangan putuskan koneksi MQTT di sini, karena dibagi di BottomNavigation
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (sensorData.isEmpty || selectedPond >= sensorData.length) {
-      return Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     return _buildDashboardView();
@@ -505,7 +486,7 @@ class SensorCardData {
   final String value;
   final Color color;
 
-  SensorCardData({
+  const SensorCardData({
     required this.icon,
     required this.label,
     required this.value,
