@@ -70,16 +70,16 @@ class _BottomNavigationState extends State<BottomNavigation> {
             label: 'Dashboard',
           ),
           BottomNavigationBarItem(
+            icon: FaIcon(FontAwesomeIcons.history),
+            label: 'History',
+          ),
+          BottomNavigationBarItem(
             icon: FaIcon(FontAwesomeIcons.wifi),
             label: 'Connection',
           ),
           BottomNavigationBarItem(
             icon: FaIcon(FontAwesomeIcons.circleInfo),
             label: 'About',
-          ),
-          BottomNavigationBarItem(
-            icon: FaIcon(FontAwesomeIcons.history),
-            label: 'History',
           ),
         ],
       ),
