@@ -1,4 +1,4 @@
-package com.example.iot_kolam_ikan
+package com.example.monitoring_kolam_lele
 
 import io.flutter.embedding.android.FlutterActivity
 
