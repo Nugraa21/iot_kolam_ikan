@@ -129,3 +129,96 @@ lib/
 }
 ```
 
+```
++-------------------------+
+|     Mulai Program       |
++-------------------------+
+            |
+            v
++-------------------------+
+| Inisialisasi Sensor &   |
+| Aktuator (Pompa, Pakan) |
++-------------------------+
+            |
+            v
++-------------------------+
+|  Baca Sensor Suhu Air   |
++-------------------------+
+            |
+            v
++-------------------------+
+|  Baca Sensor pH Air     |
++-------------------------+
+            |
+            v
++-------------------------------+
+| Apakah Suhu dalam Batas Aman? |
++-------------------------------+
+        |           |
+       Ya           Tidak
+        |             |
+        v             v
+    (Lanjut)    +------------------+
+                |  Aktifkan Alarm   |
+                | atau Nyalakan    |
+                | Pompa Pendingin   |
+                +------------------+
+                      |
+                      v
+                (Lanjutkan)
+            |
+            v
++-------------------------------+
+| Apakah pH dalam Batas Aman?   |
++-------------------------------+
+        |           |
+       Ya           Tidak
+        |             |
+        v             v
+    (Lanjut)    +------------------+
+                | Aktifkan Alarm   |
+                | atau Pompa Kimia |
+                +------------------+
+                      |
+                      v
+                (Lanjutkan)
+            |
+            v
++-------------------------+
+| Cek Waktu Pemberian     |
+| Pakan Otomatis          |
++-------------------------+
+            |
+            v
++-------------------------------+
+| Apakah Waktunya Memberi Pakan?|
++-------------------------------+
+        |           |
+       Tidak         Ya
+        |             |
+        v             v
+    (Loop)       +------------------+
+                 | Aktifkan Mesin   |
+                 | Pemberi Pakan    |
+                 +------------------+
+                       |
+                       v
+                 (Loop)
+            |
+            v
++-------------------------+
+|  Tampilkan Data Status  |
+|  (di LCD / Web / App)   |
++-------------------------+
+            |
+            v
++-------------------------+
+|  Tunggu Interval Waktu  |
+|  lalu Ulangi Loop       |
++-------------------------+
+            |
+            v
++-------------------------+
+|          Selesai        |
++-------------------------+
+```
