@@ -1,4 +1,4 @@
-package com.example.monitoring_kolam_lele
+package com.example.kolamku
 
 import io.flutter.embedding.android.FlutterActivity
 
