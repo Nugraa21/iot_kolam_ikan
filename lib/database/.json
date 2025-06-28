@@ -1,0 +1,48 @@
+{
+  "ponds": {
+    "pond_1": {
+      "sensor_data": [
+        {
+          "id": "2025-06-03T08:00:00Z",
+          "timestamp": "2025-06-03T08:00:00Z",
+          "suhu": 26.5,
+          "do": 6.2,
+          "ph": 7.1,
+          "berat_pakan": 1.5,
+          "level_air": 75
+        },
+        {
+          "id": "2025-06-03T08:15:00Z",
+          "timestamp": "2025-06-03T08:15:00Z",
+          "suhu": 26.7,
+          "do": 6.0,
+          "ph": 7.0,
+          "berat_pakan": 1.4,
+          "level_air": 74
+        }
+      ]
+    },
+    "pond_2": {
+      "sensor_data": [
+        {
+          "id": "2025-06-03T08:00:00Z",
+          "timestamp": "2025-06-03T08:00:00Z",
+          "suhu": 25.8,
+          "do": 5.9,
+          "ph": 6.8,
+          "berat_pakan": 1.2,
+          "level_air": 70
+        },
+        {
+          "id": "2025-06-03T08:15:00Z",
+          "timestamp": "2025-06-03T08:15:00Z",
+          "suhu": 26.0,
+          "do": 6.1,
+          "ph": 6.9,
+          "berat_pakan": 1.1,
+          "level_air": 71
+        }
+      ]
+    }
+  }
+}

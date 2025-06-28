@@ -1,0 +1,1196 @@
+import 'package:flutter/material.dart';
+import 'package:line_icons/line_icons.dart';
+import '../widgets/sensor_card.dart';
+import '../services/mqtt_service.dart';
+import 'about_page.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'connection_page.dart';
+import 'package:animations/animations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'control_page.dart';
+
+class DashboardPage extends StatefulWidget {
+  @override
+  _DashboardPageState createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  late MqttService mqttService;
+  int _selectedIndex = 0;
+  int selectedPond = 0;
+
+  final warningColor = const Color.fromARGB(255, 150, 0, 0);
+
+  List<List<SensorCardData>> sensorData = [];
+  List<List<String>> activeSensorKeysPerPond = [];
+  List<String> pondStatus = [];
+
+  final Map<String, SensorCardData> allSensors = {
+    'suhu': SensorCardData(
+      icon: FaIcon(FontAwesomeIcons.temperatureHigh),
+      label: 'Suhu',
+      value: '0.0 °C',
+      color: Colors.teal,
+    ),
+    'do': SensorCardData(
+      icon: FaIcon(FontAwesomeIcons.water),
+      label: 'Kadar DO',
+      value: '0.0 mg/L',
+      color: Colors.teal,
+    ),
+    'ph': SensorCardData(
+      icon: FaIcon(FontAwesomeIcons.flaskVial),
+      label: 'pH Air',
+      value: '0.0',
+      color: Colors.teal,
+    ),
+    'berat_pakan': SensorCardData(
+      icon: FaIcon(FontAwesomeIcons.weightHanging),
+      label: 'Berat Pakan',
+      value: '0.0 Kg',
+      color: Colors.teal,
+    ),
+    'level_air': SensorCardData(
+      icon: FaIcon(FontAwesomeIcons.arrowsDownToLine),
+      label: 'Ketinggian Air',
+      value: '0%',
+      color: Colors.teal,
+    ),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    mqttService = MqttService();
+    mqttService.onDataReceived = updateSensorData;
+    mqttService.connect();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPonds();
+    });
+  }
+
+  void _loadPonds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pondCount = prefs.getInt('pondCount') ?? 3;
+    final sensorLists = prefs.getStringList('activeSensors');
+
+    List<List<String>> loadedSensorKeys = [];
+
+    if (sensorLists != null && sensorLists.length == pondCount) {
+      loadedSensorKeys = sensorLists
+          .map((s) => (jsonDecode(s) as List).map((e) => e.toString()).toList())
+          .toList();
+    } else {
+      loadedSensorKeys =
+          List.generate(pondCount, (_) => allSensors.keys.toList());
+    }
+
+    setState(() {
+      activeSensorKeysPerPond = loadedSensorKeys;
+      sensorData = List.generate(pondCount, (i) => _generateSensorList(i));
+      pondStatus = List.generate(pondCount, (_) => 'Aman');
+    });
+  }
+
+  void _savePondData() async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setInt('pondCount', sensorData.length);
+    prefs.setStringList(
+      'activeSensors',
+      activeSensorKeysPerPond.map((list) => jsonEncode(list)).toList(),
+    );
+  }
+
+  List<SensorCardData> _generateSensorList(int pondIndex) {
+    return activeSensorKeysPerPond[pondIndex]
+        .map((key) => allSensors[key]!)
+        .toList();
+  }
+
+  void updateSensorData(Map<String, dynamic> data) {
+    setState(() {
+      int pondIndex = (data['kolam'] ?? 1) - 1;
+      if (pondIndex >= 0 && pondIndex < sensorData.length) {
+        List<String> activeKeys = activeSensorKeysPerPond[pondIndex];
+
+        for (int i = 0; i < activeKeys.length; i++) {
+          final key = activeKeys[i];
+          var sensor = sensorData[pondIndex][i];
+          var value = data[key];
+          bool isNormal = true;
+          String formattedValue = '$value';
+
+          switch (key) {
+            case 'suhu':
+              double val = double.tryParse('$value') ?? 0.0;
+              isNormal = val >= 24 && val <= 32;
+              formattedValue = '$val °C';
+              break;
+            case 'do':
+              double val = double.tryParse('$value') ?? 0.0;
+              isNormal = val >= 3 && val <= 8;
+              formattedValue = '$val mg/L';
+              break;
+            case 'ph':
+              double val = double.tryParse('$value') ?? 0.0;
+              isNormal = val >= 6.5 && val <= 8.5;
+              formattedValue = '$val';
+              break;
+            case 'berat_pakan':
+              double val = double.tryParse('$value') ?? 0.0;
+              isNormal = val >= 0.5;
+              formattedValue = '$val Kg';
+              break;
+            case 'level_air':
+              int val = int.tryParse('$value') ?? 0;
+              isNormal = val >= 20;
+              formattedValue = '$val%';
+              break;
+          }
+
+          sensorData[pondIndex][i] = sensor.copyWith(
+            value: formattedValue,
+            color: isNormal ? Colors.teal : warningColor,
+          );
+        }
+
+        bool isSafe =
+            sensorData[pondIndex].every((s) => s.color != warningColor);
+        pondStatus[pondIndex] = isSafe ? 'Aman' : 'Ada Masalah';
+      }
+    });
+  }
+
+  void _addPond() {
+    setState(() {
+      activeSensorKeysPerPond.add(allSensors.keys.toList());
+      sensorData.add(_generateSensorList(activeSensorKeysPerPond.length - 1));
+      pondStatus.add('Aman');
+      selectedPond = sensorData.length - 1;
+    });
+    _savePondData();
+  }
+
+  void _deletePond(int index) {
+    if (sensorData.length <= 1) return;
+    setState(() {
+      sensorData.removeAt(index);
+      activeSensorKeysPerPond.removeAt(index);
+      pondStatus.removeAt(index);
+      selectedPond = 0;
+    });
+    _savePondData();
+  }
+
+  void _showSensorSettings() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        List<String> tempSelected =
+            List.from(activeSensorKeysPerPond[selectedPond]);
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: Text('Pilih Sensor yang Ditampilkan'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: allSensors.keys.map((key) {
+                  return CheckboxListTile(
+                    value: tempSelected.contains(key),
+                    title: Text(allSensors[key]!.label),
+                    onChanged: (val) {
+                      setStateDialog(() {
+                        if (val == true) {
+                          tempSelected.add(key);
+                        } else {
+                          tempSelected.remove(key);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              actions: [
+                // TextButton(
+                //   onPressed: () => Navigator.pop(context),
+                //   child: Text('Batal'),
+                // ),                               // ---------------------------------------------- Code ati jadi harus ada yang di perbaiki
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      activeSensorKeysPerPond[selectedPond] = tempSelected;
+                      sensorData[selectedPond] =
+                          _generateSensorList(selectedPond);
+                    });
+                    _savePondData();
+                    Navigator.pop(context);
+                  },
+                  child: Text('Simpan'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<Widget> get _pages => [
+        _buildDashboardView(), // index 0
+        _buildConnectionPage(), // index 1
+        AboutPage(mqttService: mqttService), // index 2
+        ControlPage(), // <<< Tambahin ini
+      ];
+
+  Widget _buildDashboardView() {
+    TextEditingController searchController = TextEditingController();
+    List<int> filteredIndexes =
+        List.generate(sensorData.length, (index) => index);
+
+    return StatefulBuilder(
+      builder: (context, setStateView) {
+        void applySearch(String query) {
+          setStateView(() {
+            filteredIndexes = List.generate(sensorData.length, (index) => index)
+                .where((index) => 'Kolam ${index + 1}'
+                    .toLowerCase()
+                    .contains(query.toLowerCase()))
+                .toList();
+          });
+        }
+
+        return sensorData.isEmpty
+            ? Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Cari Kolam...',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onChanged: applySearch,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        IconButton(
+                          icon: Icon(Icons.settings),
+                          onPressed: _showSensorSettings,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.add),
+                          onPressed: _addPond,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete),
+                          onPressed: () => _deletePond(selectedPond),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: Duration(milliseconds: 500),
+                      transitionBuilder: (child, animation) => SlideTransition(
+                        position: Tween<Offset>(
+                          begin: Offset(1, 0),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: FadeTransition(opacity: animation, child: child),
+                      ),
+                      child: ListView(
+                        key: ValueKey<int>(selectedPond),
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          ...sensorData[selectedPond]
+                              .map((data) => SensorCard(data: data))
+                              .toList(),
+                          SizedBox(height: 20),
+                          _buildDetailTable(selectedPond),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    color: pondStatus[selectedPond] == 'Aman'
+                        ? Colors.green[100]
+                        : Colors.red[100],
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          pondStatus[selectedPond] == 'Aman'
+                              ? Icons.check_circle
+                              : Icons.warning,
+                          color: pondStatus[selectedPond] == 'Aman'
+                              ? Colors.teal
+                              : Colors.red,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Status: ${pondStatus[selectedPond]}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: pondStatus[selectedPond] == 'Aman'
+                                ? Colors.teal
+                                : Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: const Color.fromARGB(255, 92, 231, 201),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: filteredIndexes.map((index) {
+                                return GestureDetector(
+                                  onTap: () =>
+                                      setState(() => selectedPond = index),
+                                  child: Container(
+                                    margin: EdgeInsets.symmetric(horizontal: 4),
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: selectedPond == index
+                                          ? const Color(0xFF009688)
+                                          : const Color(0xFF4DB6AC),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      'Kolam ${index + 1}',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+      },
+    );
+  }
+
+  Widget _buildDetailTable(int index) {
+    final data = sensorData[index];
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Table(
+          border: TableBorder.all(color: Colors.grey),
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: Colors.grey[300]),
+              children: [
+                _buildTableCell('Sensor'),
+                _buildTableCell('Nilai'),
+                _buildTableCell('Status'),
+              ],
+            ),
+            ...data.map((sensor) {
+              bool isWarning = sensor.color == warningColor;
+              return TableRow(
+                children: [
+                  _buildTableCell(sensor.label),
+                  _buildTableCell(sensor.value),
+                  _buildTableCell(
+                    isWarning ? 'Tidak Stabil' : 'Normal',
+                    color: isWarning ? warningColor : Colors.teal,
+                  ),
+                ],
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableCell(String text, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color ?? Colors.black,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionPage() {
+    return ConnectionPage(
+      mqttService: mqttService,
+      onConnected: () => setState(() {}),
+    );
+  }
+
+  @override
+  void dispose() {
+    mqttService.disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (sensorData.isEmpty || selectedPond >= sensorData.length) {
+      return Scaffold(
+        appBar: AppBar(title: Text("Loading...")),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Monitoring Kolam Ikan',
+            style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color.fromARGB(221, 0, 0, 0),
+      ),
+      body: PageTransitionSwitcher(
+        duration: Duration(milliseconds: 500),
+        transitionBuilder: (child, animation, secondaryAnimation) =>
+            SharedAxisTransition(
+          animation: animation,
+          secondaryAnimation: secondaryAnimation,
+          transitionType: SharedAxisTransitionType.horizontal,
+          child: child,
+        ),
+        child: _pages[_selectedIndex],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.teal,
+        unselectedItemColor: Colors.black,
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: [
+          BottomNavigationBarItem(
+            icon: FaIcon(FontAwesomeIcons.dashboard),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon:
+                FaIcon(FontAwesomeIcons.wifi), // Ganti jadi ikon jaringan/wifi
+            label: 'Connection',
+          ),
+          BottomNavigationBarItem(
+            icon:
+                FaIcon(FontAwesomeIcons.circleInfo), // Ganti jadi ikon "about"
+            label: 'About',
+          ),
+          BottomNavigationBarItem(
+            icon: FaIcon(FontAwesomeIcons.sliders), // ICON barunya: "sliders"
+            label: 'Kontrol', // Label baru
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SensorCardData {
+  final Widget icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  SensorCardData({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  SensorCardData copyWith({String? value, Color? color}) {
+    return SensorCardData(
+      icon: this.icon,
+      label: this.label,
+      value: value ?? this.value,
+      color: color ?? this.color,
+    );
+  }
+}
+//  Done 19/04/2025 " ada penambahaan oada control"
+
+
+
+bisa g bagian navbar di bawah di pisah aja hehe biar mudah aja jadi ada navbar dan dashboard nya 
+
+dan di bawah ini code main.dartnya
+
+import 'package:flutter/material.dart';
+import 'pages/dashboard_page.dart';
+
+void main() => runApp(MonitoringKolamIkanApp());
+
+class MonitoringKolamIkanApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Dashbord Monitoring',
+      theme: ThemeData.light(),
+      home: DashboardPage(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class _SensorCardData {
+  final Widget icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  _SensorCardData({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+}
+//  Done 19/04/2025
+
+Dan ini code about 
+import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../services/mqtt_service.dart';
+
+class AboutPage extends StatelessWidget {
+  final MqttService mqttService;
+
+  AboutPage({required this.mqttService});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildTitleSection(),
+          _buildProfileExpansionCard(
+            icon: Icons.person,
+            name: 'Ludang Prasetyo',
+            role: 'Developer',
+            nim: '225510017',
+            tugas: 'Mengembangkan aplikasi IoT',
+            profilePicture: AssetImage('assets/ludang.jpg'),
+            email: 'ludang.prasetyo@students.utdi.ac.id',
+            github: 'https://github.com/Nugraa21',
+            skill: 'Programming dan editing video',
+          ),
+          _buildProfileExpansionCard(
+            icon: Icons.person,
+            name: 'Ibnu Hibban ',
+            role: 'UI Designer',
+            nim: '225510007',
+            tugas: 'Menangani IoT dan sensor',
+            profilePicture: AssetImage('assets/ibnu.jpg'),
+            email: 'Ibnu.Hibban.Dzulfikri@students.utdi.ac.id',
+            github: '-----',
+            skill: 'IoT, Sensor Integration, Embedded Systems',
+          ),
+          _buildProfileExpansionCard(
+            icon: Icons.person,
+            name: 'Muhammad Fadrian',
+            role: 'Tester & Dokumentasi',
+            nim: '225510005',
+            tugas: 'Melakukan testing dan dokumentasi',
+            profilePicture: AssetImage('assets/fadrian.jpg'),
+            email: 'Muhamaad.fadrian@students.utdi.ac.id',
+            github: 'https://github.com/fadrian',
+            skill: 'Testing, Documentation, Quality Assurance',
+          ),
+          const SizedBox(height: 20),
+          _buildExtraInfo(),
+          const SizedBox(height: 20),
+          _buildSensorTable(),
+          const SizedBox(height: 30),
+          _buildFooter(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitleSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(Icons.info_outline, size: 48, color: Colors.teal),
+        SizedBox(height: 10),
+        Text('Tentang Aplikasi & Tim',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        SizedBox(height: 20),
+      ],
+    );
+  }
+
+  Widget _buildProfileExpansionCard({
+    required IconData icon,
+    required String name,
+    required String role,
+    required String nim,
+    required String tugas,
+    required ImageProvider profilePicture,
+    required String email,
+    required String github,
+    required String skill,
+  }) {
+    return Card(
+      elevation: 6,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Theme(
+        data: ThemeData().copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          leading: CircleAvatar(radius: 28, backgroundImage: profilePicture),
+          title: Text(name,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          subtitle: Text(role, style: TextStyle(color: Colors.grey[700])),
+          children: [
+            _buildInfoRow(Icons.badge, 'NIM', nim),
+            _buildInfoRow(Icons.task, 'Tugas', tugas),
+            _buildInfoRow(Icons.build, 'Keahlian', skill),
+            _buildInfoRow(Icons.email, 'Email', email),
+            _buildInfoRow(FontAwesomeIcons.github, 'GitHub', github),
+            const SizedBox(height: 10),
+            const Text('Mahasiswa UTDI',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 5),
+            const Text(
+                'Universitas Teknologi Digital Indonesia (UTDI) adalah perguruan tinggi berbasis teknologi digital di Yogyakarta.'),
+            const Text('Website: https://www.utdi.ac.id',
+                style: TextStyle(color: Colors.blue)),
+            const Text(
+                'Alamat: Jl. Janti, Karang Jambe, Banguntapan, Bantul, Yogyakarta'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.teal),
+          const SizedBox(width: 8),
+          Text('$label:', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 6),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExtraInfo() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tentang Aplikasi',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text(
+              'Aplikasi ini dibuat untuk memonitor kondisi kolam ikan secara real-time menggunakan teknologi IoT. '
+              'Dengan bantuan sensor dan MQTT sebagai protokol komunikasi, pengguna dapat melihat suhu, pH, '
+              'dan status air langsung dari aplikasi ini.',
+            ),
+            const SizedBox(height: 15),
+            Text('Teknologi yang Digunakan:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('• Flutter (Mobile Framework)'),
+            const Text('• MQTT Protocol (Komunikasi Sensor)'),
+            const Text('• Sensor pH, Suhu, dan Ketinggian Air'),
+            const Text('• NodeMCU / ESP32 sebagai pengendali utama'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSensorTable() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Sensor yang Harus Dijaga Stabil',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 10),
+            Table(
+              border: TableBorder.all(
+                  color: const Color.fromARGB(255, 141, 141, 141)),
+              columnWidths: const {
+                0: FlexColumnWidth(2),
+                1: FlexColumnWidth(2),
+                2: FlexColumnWidth(3),
+              },
+              children: [
+                TableRow(
+                  decoration:
+                      BoxDecoration(color: Colors.deepPurple.withOpacity(0.2)),
+                  children: [
+                    _buildTableCell('Sensor'),
+                    _buildTableCell('Rentang Ideal'),
+                    _buildTableCell('Fungsi'),
+                  ],
+                ),
+                _buildTableRow('Suhu', '26°C - 30°C',
+                    'Mengukur suhu air kolam. Penting untuk kenyamanan dan pertumbuhan ikan.'),
+                _buildTableRow('pH Air', '6.5 - 8.5',
+                    'Mengukur tingkat keasaman atau kebasaan air.'),
+                _buildTableRow('Ketinggian Air', '> 70%',
+                    'Menjaga volume air kolam tetap optimal.'),
+                _buildTableRow('Kadar DO', '5.0 - 8.0 mg/L',
+                    'Menunjukkan kadar oksigen terlarut dalam air.'),
+                _buildTableRow('Berat Pakan', '1 - 2 Kg',
+                    'Menampilkan jumlah pakan yang tersedia.'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  TableRow _buildTableRow(String sensor, String range, String function) {
+    return TableRow(
+      children: [
+        _buildTableCell(sensor),
+        _buildTableCell(range),
+        _buildTableCell(function),
+      ],
+    );
+  }
+
+  Widget _buildTableCell(String text) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Text(text, style: TextStyle(fontSize: 13)),
+    );
+  }
+
+  Widget _buildFooter() {
+    return Column(
+      children: [
+        Divider(color: Colors.grey.shade400),
+        Text('Aplikasi IoT - 2025',
+            style: TextStyle(fontSize: 14, color: Colors.grey[700])),
+        const SizedBox(height: 4),
+        Text('Dibuat oleh Tim Developer NUGRA21',
+            style: TextStyle(fontSize: 14, color: Colors.grey[800])),
+      ],
+    );
+  }
+}
+//  Done//  Done 19/04/2025
+
+
+Dan ini code coneksi 
+
+// ... import tetap sama
+import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/mqtt_service.dart';
+
+class ConnectionPage extends StatefulWidget {
+  final MqttService mqttService;
+  final VoidCallback onConnected;
+
+  const ConnectionPage({
+    Key? key,
+    required this.mqttService,
+    required this.onConnected,
+  }) : super(key: key);
+
+  @override
+  _ConnectionPageState createState() => _ConnectionPageState();
+}
+
+class _ConnectionPageState extends State<ConnectionPage> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController brokerController = TextEditingController();
+  final TextEditingController portController = TextEditingController();
+  final TextEditingController topicController = TextEditingController();
+  final TextEditingController clientIdController = TextEditingController();
+
+  String _statusMessage = 'Belum terkoneksi';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedConfiguration();
+  }
+
+  Future<void> _loadSavedConfiguration() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      brokerController.text =
+          prefs.getString('mqtt_broker') ?? widget.mqttService.broker;
+      portController.text = prefs.getInt('mqtt_port')?.toString() ??
+          widget.mqttService.port.toString();
+      topicController.text =
+          prefs.getString('mqtt_topic') ?? widget.mqttService.topic;
+      clientIdController.text =
+          prefs.getString('mqtt_client_id') ?? widget.mqttService.clientId;
+    });
+  }
+
+  Future<void> _saveConfiguration() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('mqtt_broker', brokerController.text);
+    await prefs.setInt('mqtt_port', int.tryParse(portController.text) ?? 1883);
+    await prefs.setString('mqtt_topic', topicController.text);
+    await prefs.setString('mqtt_client_id', clientIdController.text);
+  }
+
+  Future<void> _connectToBroker() async {
+    if (_formKey.currentState!.validate()) {
+      try {
+        setState(() {
+          _statusMessage = '🔄 Menyambungkan...';
+        });
+
+        widget.mqttService.setConfiguration(
+          broker: brokerController.text,
+          port: int.tryParse(portController.text) ?? 1883,
+          topic: topicController.text,
+          clientId: clientIdController.text,
+        );
+
+        await _saveConfiguration();
+        await widget.mqttService.connect();
+
+        if (mounted) {
+          setState(() {
+            _statusMessage = '✅ Terhubung ke MQTT broker';
+          });
+          widget.onConnected();
+        }
+      } catch (e) {
+        setState(() {
+          _statusMessage = '❌ Gagal terhubung: $e';
+        });
+        Fluttertoast.showToast(
+          msg: "Gagal terhubung: $e",
+          toastLength: Toast.LENGTH_LONG,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+        );
+      }
+    }
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool isNumber = false,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return '$label tidak boleh kosong';
+        }
+        if (isNumber && int.tryParse(value.trim()) == null) {
+          return '$label harus berupa angka';
+        }
+        return null;
+      },
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: Colors.teal),
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.9),
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        labelStyle: const TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFEDF3F8),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: Card(
+              elevation: 16,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              shadowColor: Colors.teal.withOpacity(0.3),
+              child: Padding(
+                padding: const EdgeInsets.all(30),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircleAvatar(
+                        backgroundColor: Colors.teal,
+                        radius: 36,
+                        child: Icon(Icons.settings_ethernet,
+                            size: 40, color: Colors.white),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Pengaturan Koneksi MQTT',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Masukkan detail broker, port, topik, dan client ID.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 30),
+                      _buildTextField(
+                          controller: brokerController,
+                          label: 'Broker MQTT',
+                          icon: Icons.cloud),
+                      const SizedBox(height: 18),
+                      _buildTextField(
+                          controller: portController,
+                          label: 'Port',
+                          isNumber: true,
+                          icon: Icons.numbers),
+                      const SizedBox(height: 18),
+                      _buildTextField(
+                          controller: topicController,
+                          label: 'Topik',
+                          icon: Icons.topic),
+                      const SizedBox(height: 18),
+                      _buildTextField(
+                          controller: clientIdController,
+                          label: 'Client ID',
+                          icon: Icons.perm_identity),
+                      const SizedBox(height: 30),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _connectToBroker,
+                          icon: const Icon(Icons.link, size: 24),
+                          label: const Text(
+                            'Hubungkan',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 16, horizontal: 24),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            backgroundColor: Colors.teal.shade600,
+                            foregroundColor: Colors.white,
+                            elevation: 8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        _statusMessage,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: _statusMessage.contains('Gagal')
+                              ? Colors.red
+                              : Colors.teal,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+//  Done 19/04/2025
+
+
+Dan ini code control
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Add this import
+import 'package:shared_preferences/shared_preferences.dart';
+
+class ControlPage extends StatefulWidget {
+  @override
+  _ControlPageState createState() => _ControlPageState();
+}
+
+class _ControlPageState extends State<ControlPage> {
+  final TextEditingController _suhuMinController = TextEditingController();
+  final TextEditingController _suhuMaxController = TextEditingController();
+  final TextEditingController _phMinController = TextEditingController();
+  final TextEditingController _phMaxController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadValues();
+  }
+
+  void _saveValues() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    double? suhuMin = double.tryParse(_suhuMinController.text);
+    double? suhuMax = double.tryParse(_suhuMaxController.text);
+    double? phMin = double.tryParse(_phMinController.text);
+    double? phMax = double.tryParse(_phMaxController.text);
+
+    if (suhuMin == null || suhuMax == null || phMin == null || phMax == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Masukkan nilai yang valid!')),
+      );
+      return;
+    }
+
+    // Menyimpan nilai ke SharedPreferences
+    await prefs.setString('suhu_min', _suhuMinController.text);
+    await prefs.setString('suhu_max', _suhuMaxController.text);
+    await prefs.setString('ph_min', _phMinController.text);
+    await prefs.setString('ph_max', _phMaxController.text);
+
+    // Log untuk memastikan nilai tersimpan
+    print("Suhu Min: ${_suhuMinController.text}");
+    print("Suhu Max: ${_suhuMaxController.text}");
+    print("pH Min: ${_phMinController.text}");
+    print("pH Max: ${_phMaxController.text}");
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Pengaturan disimpan!')),
+    );
+  }
+
+  void _loadValues() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Memuat nilai yang telah disimpan
+    String suhuMin = prefs.getString('suhu_min') ?? '26.0';
+    String suhuMax = prefs.getString('suhu_max') ?? '30.0';
+    String phMin = prefs.getString('ph_min') ?? '6.5';
+    String phMax = prefs.getString('ph_max') ?? '8.5';
+
+    // Log untuk memastikan nilai dimuat
+    print("Loaded suhu min: $suhuMin");
+    print("Loaded suhu max: $suhuMax");
+    print("Loaded pH min: $phMin");
+    print("Loaded pH max: $phMax");
+
+    _suhuMinController.text = suhuMin;
+    _suhuMaxController.text = suhuMax;
+    _phMinController.text = phMin;
+    _phMaxController.text = phMax;
+
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Kontrol Data Sensor')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: ListView(
+          children: [
+            _buildInputField('Suhu Minimum (°C)', _suhuMinController),
+            _buildInputField('Suhu Maksimum (°C)', _suhuMaxController),
+            _buildInputField('pH Minimum', _phMinController),
+            _buildInputField('pH Maksimum', _phMaxController),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _saveValues,
+              child: Text('Simpan Pengaturan'),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Widget untuk input field suhu atau pH
+  Widget _buildInputField(String label, TextEditingController controller) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(),
+        ),
+        keyboardType: TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [
+          // Format input untuk angka desimal
+          FilteringTextInputFormatter.allow(RegExp(r'^[0-9]+\.?[0-9]*$')),
+        ],
+      ),
+    );
+  }
+}
+
+
+Nah di bagian control bisa ubah aja jadi histori jadi nanti datanya yang di kirim ke mqtt ada historinya setiap kolam jadi nanti itu juga terhubung ke dashboard buat melihat kolam dan yang lain nya sesuwain agar data nya sama yang ada di kolam
